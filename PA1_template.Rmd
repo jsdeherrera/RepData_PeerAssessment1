@@ -1,25 +1,246 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: "Movement Classifications and Insights"
+author: "Jordan S DeHerrera"
+output: html_document
 ---
 
+## Introduction
 
-## Loading and preprocessing the data
+Because of monitoring devices like FitBit, there is now a large amount of data availalable about personal movement.  However, this data may be underutilized because of a lack of statistical methods and software for processing and intepreting the data.  The data below was taken from an anonymous individual for two months and is a record of the number of steps that that person took during five minute intervals.  I will take the data, import it into R, and then calculate a series of simple statistical and data manipulation methods to get insights from the data:    
 
+* Simple mean number of steps taken per day.  
+* Plot average daily activity pattern of the individual (when is the individual most active and what can be inferred about those activitiy patterns).  
+* Imputing missing values - in order to accurately fill in missing data, I'll use the mean steps taken for that interval across all days observed to determine the missing pieces of data from the device.  
+* Determining differences between weekday and weekend activitiy patterns - I'll use the weekdays() function in R to separate out the observed days into their respective day of the week (Monday, Tuesday, etc.) and see if that gives us any insight into the activity patterns of the individual.  
 
+### Importing the data
 
-## What is mean total number of steps taken per day?
+The first step to be performed will be getting, cleaning, and analyzing the data.  To do this, I will be using the read.csv function as well as some functions from the package dplyr.
 
+1.  Import the data:
 
+```{r}
+activity <- read.csv("activity.csv")
+```
 
-## What is the average daily activity pattern?
+2.  See what the data looks like:
 
+```{r, echo=TRUE}
+head(activity)
+```
 
+We can see that the data is organized into three columns:  steps, date, and interval.  We can also see that the column steps has NA values.
 
-## Imputing missing values
+3.  We'll need to separate out the data set into subsets.  One subset will have only NA values for steps and the other subset will have no NA values.
+```{r}
+# subset without NA values
+activityclean <- data.frame(activity[!is.na(activity$steps),])
 
+# subset with only NA values
+activity.replace <- data.frame(activity[is.na(activity$steps),])
+```
 
+### Performing calculations on the data using dplyr
 
-## Are there differences in activity patterns between weekdays and weekends?
+Now that we have the data separated into non-NA and NA-only values, we'll want to calculate the mean of different groupings of the data.  We'll want to see the average daily steps per five minute interval by date (to see which days are more active than others) and also the average number of steps per five minute interval (to see what time periods were most active for this person and to help us get some insight as to what the person could have been doing during those time periods).
+
+To do this, we'll use the dplyr package:
+
+```{r, message=FALSE}
+library(dplyr)
+```
+
+1.  Create groups for interval and date:
+
+```{r}
+#create a group according to date to calculate average steps by date
+by_date <- group_by(activityclean, date)
+
+#create a group according to interval to calculate average steps by interval
+by_interval <- group_by(activityclean, interval)
+```
+
+2.  Calculate the mean for each group, put the results into two respective data frames, and then re-label the data frame column names for clarity:
+
+```{r}
+#summarize data and put into a data frame, round to nearest whole number for better graphing
+avg.days <- data.frame(summarise(by_date, round(mean(steps),0)))
+
+#rename column header for clarity
+colnames(avg.days) <- c("Date", "Steps.Per.Five.Minute.Interval")
+
+#summarize data and put into a data frame, round to nearest whole number to impute data
+avg.interval <- data.frame(summarise(by_interval, round(mean(steps),0)))
+
+#rename column header for clarity
+colnames(avg.interval) <- c("Interval", "Steps.Per.Interval")
+```
+
+### Imputing missing values using the calculated means
+
+In order to have a complete set of data, we'll now take the initial subset of data which we set aside that only has NA values and replace the NAs wih the mean values for specific missing time intervals that we just calculated in the previous section.  To do this, we'll use a simple for loop:
+
+```{r}
+#loop to replace missing values in original data set
+for (i in 1: length(activity.replace$interval))
+{
+  activity.replace[i,1] <- avg.interval[avg.interval$Interval == activity.replace[i,3],2]
+}
+```
+
+Now we'll just recombine the data into one new data set:
+
+```{r}
+#combine two data sets
+activity.new <- rbind(activity.replace,activityclean)
+
+#order the new combined data set by date and then interval
+activity.new <- activity.new[order(activity.new$date, activity.new$interval),]
+```
+
+### Separate the combined data into weekdays and weekends
+
+Now, we'll use the weekdays function to determine the day of the week for each observed date and create a new data frame that has an additional column (Day):
+
+```{r}
+#Determine day of week of each date and create a new data frame
+activity.new.weekdays <- data.frame(Date = activity.new$date, Interval = activity.new$interval,
+                                    Steps = activity.new$steps, Day = weekdays(strptime(activity.new$date, format="%Y-%m-%d"))
+)
+```
+
+1.  Now, we'l calculate an average for each day observed.  First, we need to create a group using dplyr again:
+
+```{r}
+#create a group according to days of the week
+by_weekday <- group_by(activity.new.weekdays, Day, Interval)
+```
+
+2.  Then we'll calculate the mean for each day and then rename the column headings:
+
+```{r}
+#summarize data and put into a data frame, round to nearest whole number to impute data
+avg.weekday <- data.frame(summarise(by_weekday, round(mean(Steps),0)))
+
+#rename column header for clarity
+colnames(avg.weekday) <- c("Day", "Interval", "Avg.Steps.Per.Five.Minute.Interval")
+```
+
+### Plotting the data
+Now let's take a look at the data in plots to see what insights we can gain from it.  We'll use the ggplot2 library to create these plots:
+
+```{r, message=FALSE}
+#use ggplot2 library
+library(ggplot2)
+```
+
+1.  A histogram of the mean five minute interval by date
+
+```{r, echo=TRUE}
+qplot(Steps.Per.Five.Minute.Interval, 
+                   data=avg.days, geom="histogram") +  
+  labs(title="Count of Days Grouped by Average Five Minute Interval Step Count")
+```
+
+2.  A bar plot of the mean five minute interval by date.  Note that this is different from the histogram in that this plot shows the mean five minute interval by date while the histogram groups the number of days that had a range of steps per five minute interval (the frequency of days that fall wihin specific mean steps per five minute interval buckets).
+
+```{r, echo=TRUE}
+qplot(x=Date, y=Steps.Per.Five.Minute.Interval, 
+                   data=avg.days, geom="bar", stat="identity") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  labs(title="Mean Steps Per Five Minute Interval by Date")
+```
+
+3.  A time series plot that shows average daily activity patterns
+
+* First we'll need to modify the data so that we have time series type data instead of the interval tags.
+* We'll use another for loop to accomplish this
+
+```{r}
+# Create empty data frame
+plot.avg.interval <- data.frame(Date = as.Date(character()), Mean.Steps=integer())
+
+# loop through avg.interval to create time stamps for each interval
+for (i in 1:length(avg.interval$Interval))
+{
+  if(nchar(avg.interval[i,1]) < 3)
+  {
+    plot.avg.interval.1 <- data.frame(Time = 
+                                        strptime(avg.interval[i,1], format="%S"),
+                                      Mean.Steps = 
+                                        avg.interval[i,2])
+    plot.avg.interval <- rbind(plot.avg.interval, plot.avg.interval.1)
+  }
+  else if(nchar(avg.interval[i,1]) < 4)
+  {
+    plot.avg.interval.2 <- data.frame(Time = 
+                                        strptime(paste("0",avg.interval[i,1], sep=""), format="%H%S"),
+                                      Mean.Steps = 
+                                        avg.interval[i,2])
+    plot.avg.interval <- rbind(plot.avg.interval, plot.avg.interval.2)
+  }
+  else
+  {
+    plot.avg.interval.3 <- data.frame(Time = 
+                                        strptime(avg.interval[i,1], format="%H%S"),
+                                      Mean.Steps = 
+                                        avg.interval[i,2])
+    plot.avg.interval <- rbind(plot.avg.interval, plot.avg.interval.3)
+  }
+}
+```
+
+* Now we can create the plot of the time series data:  
+
+```{r}
+ggplot(plot.avg.interval, aes(Time, Mean.Steps)) + 
+  geom_line() + xlab("") + 
+  ylab("Mean Steps per Interval") + 
+  labs(title="Mean Step Count Troughout the Day")
+```
+
+4.  Finally, let's plot the mean steps per interval and by day of the week to see if we can get any insights from the data.  We'll use the facet_grid function in ggplot2 for this.
+
+```{r}
+qplot(x = Interval, y= Avg.Steps.Per.Five.Minute.Interval, data=avg.weekday) + geom_line() + facet_grid(Day ~ .) + xlab("") +
+ylab("Mean Steps per Interval") +
+labs(title="Mean Step Count Troughout the Day by Day of Week")
+```
+
+### Conclusion and insights
+
+You can see from histogram plot that there were a handful of days (about 10 days total) in which there was very little activity or there was abnormally high activity.  For this person though, the majority of daily activity was grouped around the 40 steps per five minute interval per day range.  This equates to about 11,520 steps per day which is about the recommended amount for an individual.
+
+We can see from the mean steps per five minute interval bar graph by date that there was also one day (2012-11-13) for which no activity was recorded.  Perhaps the device was not worn that day or was turned off.  Furthermore, there were two days that were far above the normal for this person across the range of days (November 21 and November 22).  Since Thanksgiving was on November 22, it's possible that the additional activity might have been due to holiday-related activities.
+
+We can see from the time series graph that this person is usually most active in the morning.  This could be due to a morning commute by walking (although unlikely since we don't see the same spike in the evening for the return commute) or it could be due to a morning workout routine (like a morning run).
+
+We can see from the time series graph that compares average activity by day of the week that Saturday and Sunday are more consistently active for this individual.  That makes sense given that they probably work a job in which they sit at a desk for most of the day (other than spikes around lunch and at the beginning and end of the day).
+
+Finally, we imputed some missing values, so for comparison sake, I'll take a look at a histogram but this time with the missing values included as averages to see if it looks any different:
+
+```{r}
+#create a group according to date to calculate average steps by date
+by_date <- group_by(activity.new, date)
+
+#summarize data and put into a data frame, round to nearest whole number for better graphing
+avg.new.days <- data.frame(summarise(by_date, round(mean(steps),0)))
+
+#rename column header for clarity
+colnames(avg.new.days) <- c("Date", "Steps.Per.Five.Minute.Interval")
+
+qplot(Steps.Per.Five.Minute.Interval, 
+                   data=avg.new.days, geom="histogram") +  
+  labs(title="Count of Days Grouped by Average Five Minute Interval Step Count")
+```
+
+We can also see from calculations of mean and median what the effect of imputing data was:
+
+```{r}
+mean(avg.new.days$Steps.Per.Five.Minute.Interval)
+median(avg.new.days$Steps.Per.Five.Minute.Interval)
+mean(avg.days$Steps.Per.Five.Minute.Interval)
+median(avg.new.days$Steps.Per.Five.Minute.Interval)
+```
+
+Because I rounded the imputed values, the only difference is really the decimals that were dropped in order to make the graphs look better.
